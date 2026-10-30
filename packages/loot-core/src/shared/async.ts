@@ -5,7 +5,7 @@ export function sequential<T extends AnyFunction>(
   fn: T,
 ): (...args: Parameters<T>) => Promise<Awaited<ReturnType<T>>> {
   const sequenceState: {
-    running: Promise<Awaited<ReturnType<T>>> | null;
+    running: Promise<void> | null;
     queue: Array<{
       args: Parameters<T>;
       resolve: (
@@ -34,7 +34,16 @@ export function sequential<T extends AnyFunction>(
     ) => void,
     reject: (reason?: unknown) => void,
   ) {
-    sequenceState.running = fn.apply(null, args).then(
+    // A callback can throw before returning a promise. Convert that error to
+    // a rejection so it doesn't interrupt the queue.
+    let promise: Promise<Awaited<ReturnType<T>>>;
+    try {
+      promise = Promise.resolve(fn.apply(null, args));
+    } catch (error) {
+      promise = Promise.reject(error);
+    }
+
+    sequenceState.running = promise.then(
       (val: Awaited<ReturnType<T>> | PromiseLike<Awaited<ReturnType<T>>>) => {
         pump();
         resolve(val);

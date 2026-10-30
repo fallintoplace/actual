@@ -98,6 +98,35 @@ describe('async', () => {
     expect(data).toEqual([1, 1, 1, 2, 3, 3, 3]);
   });
 
+  test('sequential fn continues after a queued callback throws synchronously', async () => {
+    const calls: number[] = [];
+    let releaseFirst = () => {};
+    const gate = new Promise<void>(resolve => {
+      releaseFirst = () => resolve();
+    });
+
+    const fn = sequential((n: number) => {
+      calls.push(n);
+      if (n === 2) {
+        throw new Error('synchronous failure');
+      }
+      return n === 1 ? gate.then(() => n) : Promise.resolve(n);
+    });
+
+    const first = fn(1);
+    const second = fn(2);
+    const third = fn(3);
+
+    const assertions = [
+      expect(first).resolves.toBe(1),
+      expect(second).rejects.toThrow('synchronous failure'),
+      expect(third).resolves.toBe(3),
+    ];
+    releaseFirst();
+    await Promise.all(assertions);
+    expect(calls).toEqual([1, 2, 3]);
+  });
+
   test('once fn should only be called once', async () => {
     let timesCalled = 0;
     const fn = once(async () => {
